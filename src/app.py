@@ -36,12 +36,12 @@ def handle_invalid_usage(error):
 def sitemap():
     return generate_sitemap(app)
 # ------------------------------------------------------------------
-@app.route('/user/<int:id>', methods=['GET'])
-def get_users(id):
-    users = User.query.get_or_404(id)
-    users_serialized = users.serialize()
+@app.route('/users', methods=['GET'])
+def get_users():
+    users = User.query.all()
+    users_serialized = list(map(lambda item: item.serialized(), users))
     response_body = {
-        "msg": "Hello, this is your GET /user/id response ",
+        "msg": "Users",
         "result": users_serialized
     }
     return jsonify(response_body), 200
@@ -72,9 +72,9 @@ def get_characters():
 
 # OBTENER UN PERSONAJE
 @app.route('/character/<int:character_id>', methods=['GET'])
-def get_character_id(id):
+def get_character_id(character_id):
 
-    character = Character.query.filter_by(id=id).first()
+    character = Character.query.filter_by(id=character_id).first()
     if character is None:
         return jsonify({"msg": "Not found"}), 404
     character_serialized = character.serialize()
@@ -98,8 +98,8 @@ def get_planets():
 
 #OBTENER UN PLANETA 
 @app.route('/planet/<int:planet_id>', methods=['GET'])
-def get_planet_id(id):
-    planet = Planet.query.filter_by(id=id).first()
+def get_planet_id(planet_id):
+    planet = Planet.query.filter_by(id=planet_id).first()
     if planet is None:
         return jsonify({"msg": "Not found"}), 404
     planet_serialized = planet.serialize()
@@ -112,14 +112,16 @@ def get_planet_id(id):
 # ------------------------------------------------------------------
 # GET DE FAVORITOS   
 @app.route('/user/<int:user_id>/favourites', methods=['GET'])
-def get_user_favourites(id):
-    user = User.query.filter_by(id=id).first()
+def get_user_favourites(user_id):
+    user = User.query.filter_by(id=user_id).first()
     if user is None:
         return jsonify({"msg": "Not found"}), 404
-    user_serialized = user.serialize()
+
+    favorites = Favourite.query.filter_by(user_id = user_id).all()
+    fav_serialize = list(map(lambda item: item.serialize(), favorites))
     response_body = {
-        "msg": "Hello, this is your GET /user/id response ",
-        "result": user_serialized
+        "msg": "Your favorites",
+        "result": fav_serialize
     }
 
     return jsonify(response_body), 200
@@ -135,7 +137,7 @@ def create_user():
 
     if None in [email, password, username]:
         return jsonify({
-            "message": "Email and Password are Required"
+            "message": "Username, Email and Password are Required"
         }), 400
     
     #Creamos un nuevo usuario
@@ -143,11 +145,11 @@ def create_user():
     try:
         db.session.add(new_user)
         db.session.commit()
+        return jsonify({"msg": "Usuario creado"}), 201
     except Exception as error:
         print(error)
         db.session.rollback()
         return jsonify({"message":"Error in server"}), 500
-    return jsonify({}), 201
 # -----------------------------------------------------------------
 # POST DE PLANETAS
 @app.route("/favorites/planet/<int:planet_id>", methods=["POST"])
@@ -157,6 +159,16 @@ def add_favourite_planet(planet_id):
     #Verificamos 
     if not user_id:
         return jsonify({"message": "User ID is required"}), 400
+    
+    #VERIFICAMOS SI EXISTE EL USUARIO EN LA BASE DE DATOS
+    exist_user = User.query.filter_by(id=user_id).first()
+    if exist_user is None:
+        return jsonify({"msg": "User not found"}), 404
+    
+    #VERIFICAMOS SI EXISTE EL PLANETA EN LA BASE DE DATOS
+    exist_planet = Planet.query.filter_by(id=planet_id).first()
+    if exist_planet is None:
+        return jsonify({"msg": "Planet not found"}), 404
     
     #Verificamos si el planeta ya está en favoritos 
     existing_favourite = Favourite.query.filter_by(user_id=user_id, planet_id=planet_id).first()
@@ -168,13 +180,11 @@ def add_favourite_planet(planet_id):
     try:
         db.session.add(new_favourite)
         db.session.commit()
+        return jsonify({"message": "se agregó el planeta a favorito"}), 201
     except Exception as error:
         print(error)
         db.session.rollback()
         return jsonify({"message": "Error in server"}), 500
-
-    return jsonify({"message": "Planet ya es un favorito"}), 201
-
 # ------------------------------------------------------------------
 @app.route("/favorites/character/<int:character_id>", methods=["POST"])
 def add_favourite_character(character_id):
@@ -184,78 +194,54 @@ def add_favourite_character(character_id):
     if not user_id:
         return jsonify({"message": "User ID is required"}), 400
     
+    #VERIFICAMOS SI EXISTE EL USUARIO EN LA BASE DE DATOS
+    exist_user = User.query.filter_by(id=user_id).first()
+    if exist_user is None:
+        return jsonify({"msg": "User not found"}), 404
+    
+    #VERIFICAMOS SI EXISTE EL PLANETA EN LA BASE DE DATOS 
+    exist_character = Planet.query.filter_by(id=character_id).first()
+    if exist_character is None:
+        return jsonify({"msg": "Character not found"}), 404
+    
     #Verificamos si el personaje ya está en favoritos
     existing_favourite = Favourite.query.filter_by(user_id=user_id, character_id=character_id).first()
     if existing_favourite:
-        return jsonify({"message": "Planet ya es un favorito"}), 400 
+        return jsonify({"message": "El personaje ya existe en favoritos"}), 400 
     
     #Agregamos un nuevo favorito
     new_favourite = Favourite(user_id=user_id, character_id=character_id)
     try:
         db.session.add(new_favourite)
         db.session.commit()
+        return jsonify({"message": "Personaje añadido a favoritos"}), 201
+
     except Exception as error:
         print(error)
         db.session.rollback()
         return jsonify({"message": "Error in server"}), 500
 
-    return jsonify({"message": "Personaje añadido a favoritos"}), 201
 # ------------------------------------------------------------------
-#DELETE FAVORITO DE PERSONAJE
-@app.route("/favorites/character/<int:character_id>", methods=["DELETE"])
-def delete_favourite_character(character_id):
-    user_id = request.json.get("user_id")
-    
-    if not user_id:
-        return jsonify({"message": "User ID is required"}), 400
+#DELETE FAVORITO
+@app.route("/favorites/<int:character_id>", methods=["DELETE"])
+def delete_favourite(id):
+    #BUSCAR EL FAVORITO
+    favourite = Favourite.query.filter_by(id=id).first()
 
-    # Buscar el favorito
-    favourite = Favourite.query.filter_by(user_id=user_id, character_id=character_id).first()
-    
     if favourite is None:
-        return jsonify({"message": "Favourito no encontrado"}), 404
-
+        return jsonify({"message": "Favorito no encontrado"}), 404
+   
     # Eliminar el favorito
     try:
         db.session.delete(favourite)
         db.session.commit()
+        return jsonify({"message": "Favorito eliminado correctamente"}), 200
+
     except Exception as error:
         print(error)
         db.session.rollback()
         return jsonify({"message": "Error in server"}), 500
-
-    return jsonify({"message": "Favourito eliminado correctamente"}), 200
 # ------------------------------------------------------------------
-#DELETE FAVORITO DE PLANETAS
-@app.route("/favorites/planet/<int:planet_id>", methods=["DELETE"])
-def delete_favourite_planet(planet_id):
-    user_id = request.json.get("user_id")
-    
-    if not user_id:
-        return jsonify({"message": "User ID is required"}), 400
-
-    # Buscar el favorito
-    favourite = Favourite.query.filter_by(user_id=user_id, planet_id=planet_id).first()
-    
-    if favourite is None:
-        return jsonify({"message": "Favourito no encontrado"}), 404
-
-    # Eliminar el favorito
-    try:
-        db.session.delete(favourite)
-        db.session.commit()
-    except Exception as error:
-        print(error)
-        db.session.rollback()
-        return jsonify({"message": "Error in server"}), 500
-
-    return jsonify({"message": "Favourito eliminado correctamente"}), 200
-
-
-
-
-
-
 
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
