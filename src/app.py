@@ -223,7 +223,7 @@ def add_favourite_character(character_id):
 
 # ------------------------------------------------------------------
 #DELETE FAVORITO
-@app.route("/favorites/<int:character_id>", methods=["DELETE"])
+@app.route("/favorites/<int:id>", methods=["DELETE"])
 def delete_favourite(id):
     #BUSCAR EL FAVORITO
     favourite = Favourite.query.filter_by(id=id).first()
@@ -242,6 +242,12 @@ def delete_favourite(id):
         db.session.rollback()
         return jsonify({"message": "Error in server"}), 500
 # ------------------------------------------------------------------
+
+
+
+
+
+
 
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
